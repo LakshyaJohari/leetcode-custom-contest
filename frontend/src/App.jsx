@@ -95,8 +95,8 @@ const App = () => {
     localStorage.setItem('lc_cookie', cookie);
 
     try {
-      // USING LOCALHOST URL
-      const res = await axios.post('http://127.0.0.1:8000/create-contest', {
+      // USING LOCALHOST URL 11111
+      const res = await axios.post('https://lee-con-tom.onrender.com/create-contest', {
         session_cookie: cookie,
         selected_tags: selectedTags,
         mode: mode
@@ -126,7 +126,8 @@ const App = () => {
     if (!isActive) return;
     const slugs = contest.map(p => p.titleSlug);
     try {
-      const res = await axios.post('http://127.0.0.1:8000/check-status', {
+      //2222
+      const res = await axios.post('https://lee-con-tom.onrender.com/check-status', {
         username: username,
         problem_slugs: slugs,
         contest_start_time: startTime
