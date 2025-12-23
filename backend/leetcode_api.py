@@ -2,42 +2,72 @@ import requests
 import random
 
 LEETCODE_URL = "https://leetcode.com/graphql"
-QUERY_RECENT_AC = """
-query recentAcSubmissionList($username: String!, $limit: Int!) {
-  recentAcSubmissionList(username: $username, limit: $limit) {
+QUERY_RECENT_ALL = """
+query recentSubmissionList($username: String!, $limit: Int!) {
+  recentSubmissionList(username: $username, limit: $limit) {
     titleSlug
+    statusDisplay
     timestamp
   }
 }
 """
 
 def check_recent_submissions(username, problem_slugs, contest_start_timestamp):
-    # If no username is provided, we can't check.
     if not username:
         return {}
 
     try:
-        # Fetch last 20 accepted submissions
-        # We need the username. If using cookie, we can deduce it or user must provide it.
-        # For simplicity in V2, we will ask user for username in frontend.
+        # Fetch last 50 submissions (increased limit to catch wrong attempts)
         response = requests.post(LEETCODE_URL, json={
-            'query': QUERY_RECENT_AC,
-            'variables': {'username': username, 'limit': 20}
+            'query': QUERY_RECENT_ALL,
+            'variables': {'username': username, 'limit': 50}
         }, timeout=10)
         
         if response.status_code == 200:
             data = response.json()
-            submissions = data.get('data', {}).get('recentAcSubmissionList', [])
+            submissions = data.get('data', {}).get('recentSubmissionList', [])
             
-            updates = {}
+            # Structure: { "two-sum": { "time": 170999, "fails": 2 } }
+            results = {} 
+
+            # Process submissions to find AC and count penalties
+            # We iterate chronologically (oldest to newest is easier, but API gives newest first)
+            # So we group them first.
+            grouped_subs = {slug: [] for slug in problem_slugs}
+            
             for sub in submissions:
                 slug = sub['titleSlug']
-                # Check if this submission is for one of our contest problems
-                # AND if it happened AFTER the contest started
-                if slug in problem_slugs and int(sub['timestamp']) > contest_start_timestamp:
-                    updates[slug] = int(sub['timestamp'])
+                ts = int(sub['timestamp'])
+                if slug in problem_slugs and ts > contest_start_timestamp:
+                    grouped_subs[slug].append(sub)
+
+            for slug, subs in grouped_subs.items():
+                if not subs:
+                    continue
+                
+                # Sort by time: Oldest first
+                subs.sort(key=lambda x: int(x['timestamp']))
+                
+                penalty_count = 0
+                solved_time = None
+                is_solved = False
+
+                for s in subs:
+                    if s['statusDisplay'] == 'Accepted':
+                        solved_time = int(s['timestamp'])
+                        is_solved = True
+                        break # Stop counting after first AC
+                    else:
+                        # Count wrong answer, TLE, runtime error, etc.
+                        penalty_count += 1
+                
+                if is_solved:
+                    results[slug] = {
+                        "time": solved_time,
+                        "fails": penalty_count
+                    }
             
-            return updates # Returns { "two-sum": 1709999999, ... }
+            return results
             
     except Exception as e:
         print(f"Error checking submissions: {e}")
