@@ -87,7 +87,7 @@ const App = () => {
 
     try {
       // REPLACE WITH YOUR BACKEND URL (Use localhost for testing)
-      const res = await axios.post('http://127.0.0.1:8000/create-contest', {
+      const res = await axios.post('http://lee-con-tom.onrender.com/create-contest', {
         session_cookie: cookie, selected_tags: selectedTags, mode: mode
       });
       
@@ -110,7 +110,7 @@ const App = () => {
   const checkSubmissions = async () => {
     if (!isActive) return;
     try {
-      const res = await axios.post('http://127.0.0.1:8000/check-status', {
+      const res = await axios.post('http://lee-con-tom.onrender.com/check-status', {
         username: username,
         problem_slugs: contest.map(p => p.titleSlug),
         contest_start_time: startTime
