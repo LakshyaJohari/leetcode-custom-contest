@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import json
 import logging
+import secrets
 import time
 from typing import Optional
 
@@ -74,6 +75,10 @@ class RecordSubmissionRequest(BaseModel):
     participant_id: int
     problem_slug: str
     verdict: str   # 'accepted' | 'wrong'
+
+
+class EndContestRequest(BaseModel):
+    host_token: str
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +186,13 @@ def create_hosted_contest(req: CreateHostedContestRequest, db: Session = Depends
 
     end_dt = start_dt + datetime.timedelta(minutes=90)
 
+    # A session cookie is required when filtering by solved/unsolved status
+    if req.mode in ("solved", "unsolved") and not req.session_cookie:
+        raise HTTPException(
+            status_code=400,
+            detail="A LeetCode session cookie is required for solved/unsolved filtering.",
+        )
+
     problems = get_problems_with_status(req.session_cookie)
     if not problems:
         raise HTTPException(status_code=500, detail="Failed to fetch problems from LeetCode")
@@ -203,12 +215,15 @@ def create_hosted_contest(req: CreateHostedContestRequest, db: Session = Depends
     else:
         status = "scheduled"
 
+    host_token = secrets.token_urlsafe(32)
+
     contest = HostedContest(
         title=req.title,
         start_time=start_dt,
         end_time=end_dt,
         status=status,
         problems=contest_problems,
+        host_token=host_token,
     )
     db.add(contest)
     db.commit()
@@ -221,6 +236,7 @@ def create_hosted_contest(req: CreateHostedContestRequest, db: Session = Depends
         "end_time": contest.end_time.isoformat(),
         "status": contest.status,
         "problems": contest.problems,
+        "host_token": contest.host_token,
     }
 
 
@@ -373,6 +389,30 @@ def get_leaderboard(contest_id: int, db: Session = Depends(get_db)):
         "server_time": int(time.time()),
         "leaderboard": leaderboard,
     }
+
+
+@app.post("/hosted-contest/{contest_id}/end")
+async def end_contest(
+    contest_id: int, req: EndContestRequest, db: Session = Depends(get_db)
+):
+    """Allow the contest host to manually end an active or scheduled contest."""
+    c = db.query(HostedContest).filter(HostedContest.id == contest_id).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Contest not found")
+    if c.host_token != req.host_token:
+        raise HTTPException(status_code=403, detail="Invalid host token")
+    if c.status == "finished":
+        raise HTTPException(status_code=400, detail="Contest is already finished")
+
+    c.status = "finished"
+    db.add(c)
+    db.commit()
+
+    # Broadcast final leaderboard to all connected WebSocket clients
+    leaderboard = _build_leaderboard(c, db)
+    await _manager.broadcast(contest_id, {"type": "leaderboard", "data": leaderboard})
+
+    return {"status": "finished"}
 
 
 # ---------------------------------------------------------------------------

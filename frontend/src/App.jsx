@@ -381,6 +381,10 @@ const HostedContestList = () => {
 
   const handleCreated = async (newContest) => {
     setShowScheduler(false);
+    // Store the host token so the creator can end the contest early
+    if (newContest.host_token) {
+      localStorage.setItem(`hc_host_token_${newContest.id}`, newContest.host_token);
+    }
     // Fetch full details (including problems array)
     try {
       const res = await axios.get(`${API_BASE}/hosted-contest/${newContest.id}`);

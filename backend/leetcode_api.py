@@ -287,20 +287,18 @@ def get_problems_with_status(session_cookie=None):
         logger.error("Failed to fetch problems from LeetCode API")
         return []
 
-    # If cookie provided but status field is null (API not returning it reliably),
-    # use the AC-filter fallback to populate solved status
+    # When a valid cookie is provided, always use the AC-filter fallback to get
+    # a reliable and complete set of solved problem slugs.  The problemset list
+    # API does not consistently return per-problem status even when authenticated,
+    # so we always override whatever status the API returned.
     if session_cookie and cookie_valid:
-        status_present = any(p.get("status") is not None for p in problems)
-        logger.info("Status field present in API response: %s", status_present)
-
-        if not status_present:
-            logger.info("Status field null – using AC-filter fallback to fetch solved slugs")
-            solved_slugs = _fetch_solved_slugs_via_filter(session_cookie)
-            for p in problems:
-                if p["titleSlug"] in solved_slugs:
-                    p["status"] = "ac"
-                else:
-                    p["status"] = None
+        logger.info("Cookie valid – fetching solved slugs via AC-filter for reliable status")
+        solved_slugs = _fetch_solved_slugs_via_filter(session_cookie)
+        for p in problems:
+            if p["titleSlug"] in solved_slugs:
+                p["status"] = "ac"
+            else:
+                p["status"] = None
 
     return problems
 
