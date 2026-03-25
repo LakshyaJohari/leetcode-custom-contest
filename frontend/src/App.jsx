@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Settings, Play, Trophy, ExternalLink, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
+import { Settings, Play, Trophy, ExternalLink, Loader2, AlertCircle, CheckCircle, Calendar, Users } from 'lucide-react';
+import ContestScheduler from './components/ContestScheduler';
+import ContestLobby from './components/ContestLobby';
 
 const TAG_OPTIONS = [
   { name: "Array", slug: "array" },
@@ -16,34 +18,32 @@ const TAG_OPTIONS = [
 ];
 
 const POINTS = { 'Easy': 3, 'Medium': 5, 'Hard': 7 };
+const API_BASE = import.meta.env.VITE_API_URL || 'https://lee-con-tom.onrender.com';
 
-const App = () => {
-  // --- CONFIG STATE ---
+// ---------------------------------------------------------------------------
+// Solo Contest (original flow)
+// ---------------------------------------------------------------------------
+const SoloContest = () => {
   const [username, setUsername] = useState(localStorage.getItem('lc_username') || "");
   const [cookie, setCookie] = useState(localStorage.getItem('lc_cookie') || "");
-  const [mode, setMode] = useState("all"); // 'all', 'solved', 'unsolved'
+  const [mode, setMode] = useState("all");
   const [selectedTags, setSelectedTags] = useState([]);
   const [showConfig, setShowConfig] = useState(true);
 
-  // --- CONTEST STATE ---
   const [contest, setContest] = useState([]);
-  const [startTime, setStartTime] = useState(0); 
-  const [endTime, setEndTime] = useState(0); 
+  const [startTime, setStartTime] = useState(0);
+  const [endTime, setEndTime] = useState(0);
   const [timeLeft, setTimeLeft] = useState(5400);
   const [isActive, setIsActive] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
-  
-  // Progress now stores fails: { "slug": { solved: true, timeTaken: 12, fails: 2 } }
   const [progress, setProgress] = useState({});
   const [loading, setLoading] = useState(false);
 
-  // --- 1. PERSISTENCE ---
   useEffect(() => {
     const savedState = localStorage.getItem('CONTEST_STATE');
     if (savedState) {
       const parsed = JSON.parse(savedState);
       const now = Date.now();
-      
       if (parsed.isActive && parsed.endTime > now) {
         setContest(parsed.contest);
         setStartTime(parsed.startTime);
@@ -70,65 +70,15 @@ const App = () => {
     }
   }, [contest, startTime, endTime, isActive, isFinished, progress, mode]);
 
-  // --- 2. LOGIC ---
-  useEffect(() => {
-    let interval = null;
-    if (isActive && timeLeft > 0) {
-      interval = setInterval(() => {
-        const now = Date.now();
-        const secondsRemaining = Math.max(0, Math.floor((endTime - now) / 1000));
-        setTimeLeft(secondsRemaining);
-        if (secondsRemaining > 0 && secondsRemaining % 15 === 0) checkSubmissions();
-      }, 1000);
-    } else if (isActive && timeLeft <= 0) {
-      finishContest();
-    }
-    return () => clearInterval(interval);
-  }, [isActive, timeLeft, endTime]);
-
-  const startContest = async () => {
-    if (!username) return alert("Please enter your LeetCode Username!");
-    
-    setLoading(true);
-    localStorage.setItem('lc_username', username);
-    localStorage.setItem('lc_cookie', cookie);
-
-    try {
-      // REPLACE WITH YOUR RENDER URL
-      const res = await axios.post('https://lee-con-tom.onrender.com/create-contest', {
-        session_cookie: cookie,
-        selected_tags: selectedTags,
-        mode: mode
-      });
-      
-      const serverTime = res.data.server_time;
-      setContest(res.data.contest);
-      setStartTime(serverTime);
-      setEndTime(Date.now() + 5400000); // 90 mins
-      setTimeLeft(5400);
-      setProgress({});
-      setIsActive(true);
-      setIsFinished(false);
-      setShowConfig(false);
-    } catch (err) {
-      console.error(err);
-      alert("Error starting contest. Ensure backend is running and URL is correct.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const checkSubmissions = async () => {
+  const checkSubmissions = useCallback(async () => {
     if (!isActive) return;
     try {
-      const res = await axios.post('https://lee-con-tom.onrender.com/check-status', {
+      const res = await axios.post(`${API_BASE}/check-status`, {
         username: username,
         problem_slugs: contest.map(p => p.titleSlug),
         contest_start_time: startTime
       });
-
       const solvedMap = res.data;
-      
       setProgress(prev => {
         const newProgress = { ...prev };
         let updated = false;
@@ -143,17 +93,58 @@ const App = () => {
         return updated ? newProgress : prev;
       });
     } catch (err) { console.error(err); }
+  }, [isActive, username, contest, startTime]);
+
+  useEffect(() => {
+    let interval = null;
+    if (isActive && timeLeft > 0) {
+      interval = setInterval(() => {
+        const now = Date.now();
+        const secondsRemaining = Math.max(0, Math.floor((endTime - now) / 1000));
+        setTimeLeft(secondsRemaining);
+        if (secondsRemaining > 0 && secondsRemaining % 15 === 0) checkSubmissions();
+      }, 1000);
+    } else if (isActive && timeLeft <= 0) {
+      finishContest();
+    }
+    return () => clearInterval(interval);
+  }, [isActive, timeLeft, endTime, checkSubmissions]);
+
+  const startContest = async () => {
+    if (!username) return alert("Please enter your LeetCode Username!");
+    setLoading(true);
+    localStorage.setItem('lc_username', username);
+    localStorage.setItem('lc_cookie', cookie);
+    try {
+      const res = await axios.post(`${API_BASE}/create-contest`, {
+        session_cookie: cookie,
+        selected_tags: selectedTags,
+        mode: mode
+      });
+      const serverTime = res.data.server_time;
+      setContest(res.data.contest);
+      setStartTime(serverTime);
+      setEndTime(Date.now() + 5400000);
+      setTimeLeft(5400);
+      setProgress({});
+      setIsActive(true);
+      setIsFinished(false);
+      setShowConfig(false);
+    } catch (err) {
+      console.error(err);
+      alert("Error starting contest. Ensure backend is running and URL is correct.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const finishContest = () => { setIsActive(false); setIsFinished(true); };
-  
   const resetTool = () => {
     localStorage.removeItem('CONTEST_STATE');
     setIsActive(false); setIsFinished(false); setShowConfig(true); setContest([]);
   };
-
   const toggleTag = (slug) => {
-    setSelectedTags(prev => 
+    setSelectedTags(prev =>
       prev.includes(slug) ? prev.filter(t => t !== slug) : [...prev, slug]
     );
   };
@@ -161,7 +152,6 @@ const App = () => {
   const calculateScore = () => {
     let score = 0;
     let totalPenaltyTime = 0;
-    
     contest.forEach(p => {
       const stat = progress[p.titleSlug];
       if (stat?.solved) {
@@ -172,15 +162,12 @@ const App = () => {
     return { score, totalPenaltyTime };
   };
 
-  // --- VERDICT LOGIC ---
   const getVerdict = (score, time) => {
-    const totalPossible = contest.reduce((a,b) => a + POINTS[b.difficulty], 0);
-    
+    const totalPossible = contest.reduce((a, b) => a + POINTS[b.difficulty], 0);
     if (score === 0) return { title: "Participant", color: "text-gray-400" };
     if (score < 5) return { title: "Pupil (1200+)", color: "text-green-400" };
     if (score < 10) return { title: "Specialist (1400+)", color: "text-cyan-400" };
     if (score < totalPossible) return { title: "Expert (1600+)", color: "text-blue-400" };
-    
     if (time < 45) return { title: "Guardian (2200+)", color: "text-red-500" };
     if (time < 70) return { title: "Knight (1900+)", color: "text-orange-400" };
     return { title: "Guardian (2000+)", color: "text-yellow-400" };
@@ -191,8 +178,7 @@ const App = () => {
   const verdict = isFinished ? getVerdict(score, totalPenaltyTime) : null;
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100 p-8 font-sans">
-      
+    <>
       {/* HEADER */}
       <div className="flex justify-between items-center mb-8 border-b border-gray-700 pb-4">
         <h1 className="text-3xl font-bold text-orange-500">LeetCode Contest Sim</h1>
@@ -204,23 +190,21 @@ const App = () => {
             <button onClick={finishContest} className="bg-red-600 hover:bg-red-500 px-4 py-2 rounded font-bold transition">Submit Contest</button>
           </div>
         ) : !showConfig && (
-           <button onClick={resetTool} className="p-2 bg-gray-800 rounded hover:bg-gray-700 text-sm">New Contest</button>
+          <button onClick={resetTool} className="p-2 bg-gray-800 rounded hover:bg-gray-700 text-sm">New Contest</button>
         )}
       </div>
 
-      {/* SETUP PANEL (RESTORED FULLY) */}
       {showConfig && (
-        <div className="max-w-3xl mx-auto bg-gray-800 p-8 rounded-xl border border-gray-700 animate-fade-in">
+        <div className="max-w-3xl mx-auto bg-gray-800 p-8 rounded-xl border border-gray-700">
           <div className="flex items-center gap-2 mb-6 text-xl font-bold text-white border-b border-gray-700 pb-2">
             <Settings className="text-orange-500" /> Contest Setup
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="space-y-4">
               <h3 className="font-semibold text-gray-400">1. Identity</h3>
               <div>
                 <label className="block text-sm text-gray-500 mb-1">LeetCode Username (Required)</label>
-                <input 
+                <input
                   value={username} onChange={e => setUsername(e.target.value)}
                   className="w-full bg-gray-900 border border-gray-600 rounded p-3 focus:border-orange-500 outline-none transition"
                   placeholder="e.g. neal_wu"
@@ -228,7 +212,7 @@ const App = () => {
               </div>
               <div>
                 <label className="block text-sm text-gray-500 mb-1">Session Cookie (For 'Unsolved' Mode)</label>
-                <input 
+                <input
                   value={cookie} onChange={e => setCookie(e.target.value)}
                   className="w-full bg-gray-900 border border-gray-600 rounded p-3 focus:border-orange-500 outline-none transition"
                   type="password"
@@ -236,7 +220,6 @@ const App = () => {
                 />
               </div>
             </div>
-
             <div className="space-y-4">
               <h3 className="font-semibold text-gray-400">2. Filters</h3>
               <div>
@@ -253,7 +236,6 @@ const App = () => {
                   ))}
                 </div>
               </div>
-
               <div>
                 <label className="block text-sm text-gray-500 mb-2">Tags (Optional)</label>
                 <div className="flex flex-wrap gap-2">
@@ -270,9 +252,8 @@ const App = () => {
               </div>
             </div>
           </div>
-
-          <button 
-            onClick={startContest} 
+          <button
+            onClick={startContest}
             disabled={loading}
             className={`w-full mt-8 py-4 rounded-lg font-bold text-lg flex justify-center items-center gap-2 transition
               ${loading ? 'bg-green-800 text-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-500 text-white'}`}
@@ -282,103 +263,260 @@ const App = () => {
         </div>
       )}
 
-      {/* CONTEST ARENA */}
       {!showConfig && !isFinished && (
         <div className="max-w-5xl mx-auto space-y-4">
-           <div className="flex justify-between text-gray-400 text-sm px-2">
-              <span>Problem Set</span>
-              <span>Live Status (Updates every 15s)</span>
-           </div>
-           {contest.map((p, idx) => {
-             const stat = progress[p.titleSlug];
-             return (
-               <div key={idx} className={`p-5 rounded-xl border flex justify-between items-center transition-all ${stat?.solved ? 'bg-green-900/20 border-green-600 shadow-[0_0_15px_rgba(34,197,94,0.2)]' : 'bg-gray-800 border-gray-700 hover:border-gray-600'}`}>
-                 <div>
-                   <div className="flex items-center gap-3 mb-1">
-                     <span className={`text-xs font-bold uppercase px-2 py-1 rounded ${p.difficulty === 'Easy' ? 'bg-green-900 text-green-400' : p.difficulty === 'Medium' ? 'bg-yellow-900 text-yellow-400' : 'bg-red-900 text-red-400'}`}>
-                       {p.difficulty}
-                     </span>
-                     <span className="text-gray-500 text-xs font-mono">{POINTS[p.difficulty]} pts</span>
-                   </div>
-                   <span className="text-xl font-semibold text-gray-100">{p.title}</span>
-                 </div>
-                 
-                 <div className="flex items-center gap-4">
-                   {stat?.solved ? (
-                     <div className="text-right animate-fade-in">
-                       <div className="text-green-400 font-bold flex items-center justify-end gap-2">
-                         <CheckCircle size={16} /> Accepted
-                       </div>
-                       <div className="text-xs text-gray-400 font-mono mt-1">
-                         {stat.timeTaken} min 
-                         {stat.fails > 0 && <span className="text-red-400 ml-1 font-bold">(+{stat.fails} pen)</span>}
-                       </div>
-                     </div>
-                   ) : (
-                     <a href={`https://leetcode.com/problems/${p.titleSlug}/`} target="_blank" rel="noreferrer" className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg font-bold flex items-center gap-2 transition">
-                       Solve <ExternalLink size={16} />
-                     </a>
-                   )}
-                 </div>
-               </div>
-             );
-           })}
+          <div className="flex justify-between text-gray-400 text-sm px-2">
+            <span>Problem Set</span>
+            <span>Live Status (Updates every 15s)</span>
+          </div>
+          {contest.map((p, idx) => {
+            const stat = progress[p.titleSlug];
+            return (
+              <div key={idx} className={`p-5 rounded-xl border flex justify-between items-center transition-all ${stat?.solved ? 'bg-green-900/20 border-green-600 shadow-[0_0_15px_rgba(34,197,94,0.2)]' : 'bg-gray-800 border-gray-700 hover:border-gray-600'}`}>
+                <div>
+                  <div className="flex items-center gap-3 mb-1">
+                    <span className={`text-xs font-bold uppercase px-2 py-1 rounded ${p.difficulty === 'Easy' ? 'bg-green-900 text-green-400' : p.difficulty === 'Medium' ? 'bg-yellow-900 text-yellow-400' : 'bg-red-900 text-red-400'}`}>
+                      {p.difficulty}
+                    </span>
+                    <span className="text-gray-500 text-xs font-mono">{POINTS[p.difficulty]} pts</span>
+                  </div>
+                  <span className="text-xl font-semibold text-gray-100">{p.title}</span>
+                </div>
+                <div className="flex items-center gap-4">
+                  {stat?.solved ? (
+                    <div className="text-right">
+                      <div className="text-green-400 font-bold flex items-center justify-end gap-2">
+                        <CheckCircle size={16} /> Accepted
+                      </div>
+                      <div className="text-xs text-gray-400 font-mono mt-1">
+                        {stat.timeTaken} min
+                        {stat.fails > 0 && <span className="text-red-400 ml-1 font-bold">(+{stat.fails} pen)</span>}
+                      </div>
+                    </div>
+                  ) : (
+                    <a href={`https://leetcode.com/problems/${p.titleSlug}/`} target="_blank" rel="noreferrer" className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg font-bold flex items-center gap-2 transition">
+                      Solve <ExternalLink size={16} />
+                    </a>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* RESULTS SCREEN */}
       {isFinished && (
-        <div className="max-w-3xl mx-auto bg-gray-800 p-8 rounded-xl border border-gray-700 text-center animate-fade-in">
-           <Trophy size={64} className="mx-auto text-yellow-500 mb-4" />
-           <h2 className="text-3xl font-bold mb-2">Contest Finished</h2>
-           
-           <div className="flex justify-center gap-12 mb-8 mt-6">
-             <div>
-               <div className="text-sm text-gray-500 uppercase font-bold tracking-wider">Total Score</div>
-               <div className="text-5xl font-bold text-white">{score} <span className="text-2xl text-gray-600">/ {contest.reduce((a,b)=>a+POINTS[b.difficulty],0)}</span></div>
-             </div>
-             <div>
-               <div className="text-sm text-gray-500 uppercase font-bold tracking-wider">Penalty Time</div>
-               <div className="text-5xl font-bold text-white">{totalPenaltyTime} <span className="text-2xl text-gray-600">min</span></div>
-             </div>
-           </div>
-
-           <div className="mb-10 p-6 bg-gray-900 rounded-xl border border-gray-700">
-             <div className="text-gray-400 text-sm mb-2 uppercase font-bold">Performance Verdict</div>
-             <div className={`text-4xl font-black uppercase tracking-wide ${verdict.color}`}>{verdict.title}</div>
-           </div>
-
-           <div className="bg-gray-900 rounded-lg overflow-hidden border border-gray-700 mb-8">
-             <table className="w-full text-left">
-               <thead className="bg-gray-700 text-gray-300 text-xs uppercase">
-                 <tr>
-                   <th className="p-4">Problem</th>
-                   <th className="p-4">Result</th>
-                   <th className="p-4">Details</th>
-                   <th className="p-4 text-right">Points</th>
-                 </tr>
-               </thead>
-               <tbody className="divide-y divide-gray-800">
-                 {contest.map((p, idx) => {
-                   const stat = progress[p.titleSlug];
-                   return (
-                     <tr key={idx} className="hover:bg-gray-800/50">
-                       <td className="p-4 text-sm font-medium">{p.title}</td>
-                       <td className={`p-4 font-bold text-sm ${stat?.solved ? 'text-green-500' : 'text-red-500'}`}>{stat?.solved ? "AC" : "Not Solved"}</td>
-                       <td className="p-4 font-mono text-sm text-gray-400">
-                         {stat?.solved ? <span>{stat.timeTaken}m <span className="text-red-500 font-bold">+{stat.fails * 5}</span></span> : "--"}
-                       </td>
-                       <td className="p-4 text-right font-bold text-white">{stat?.solved ? POINTS[p.difficulty] : 0}</td>
-                     </tr>
-                   );
-                 })}
-               </tbody>
-             </table>
-           </div>
-
-           <button onClick={resetTool} className="bg-gray-700 hover:bg-gray-600 text-white px-8 py-3 rounded-lg font-bold transition">Start New Contest</button>
+        <div className="max-w-3xl mx-auto bg-gray-800 p-8 rounded-xl border border-gray-700 text-center">
+          <Trophy size={64} className="mx-auto text-yellow-500 mb-4" />
+          <h2 className="text-3xl font-bold mb-2">Contest Finished</h2>
+          <div className="flex justify-center gap-12 mb-8 mt-6">
+            <div>
+              <div className="text-sm text-gray-500 uppercase font-bold tracking-wider">Total Score</div>
+              <div className="text-5xl font-bold text-white">{score} <span className="text-2xl text-gray-600">/ {contest.reduce((a, b) => a + POINTS[b.difficulty], 0)}</span></div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-500 uppercase font-bold tracking-wider">Penalty Time</div>
+              <div className="text-5xl font-bold text-white">{totalPenaltyTime} <span className="text-2xl text-gray-600">min</span></div>
+            </div>
+          </div>
+          <div className="mb-10 p-6 bg-gray-900 rounded-xl border border-gray-700">
+            <div className="text-gray-400 text-sm mb-2 uppercase font-bold">Performance Verdict</div>
+            <div className={`text-4xl font-black uppercase tracking-wide ${verdict.color}`}>{verdict.title}</div>
+          </div>
+          <div className="bg-gray-900 rounded-lg overflow-hidden border border-gray-700 mb-8">
+            <table className="w-full text-left">
+              <thead className="bg-gray-700 text-gray-300 text-xs uppercase">
+                <tr>
+                  <th className="p-4">Problem</th>
+                  <th className="p-4">Result</th>
+                  <th className="p-4">Details</th>
+                  <th className="p-4 text-right">Points</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800">
+                {contest.map((p, idx) => {
+                  const stat = progress[p.titleSlug];
+                  return (
+                    <tr key={idx} className="hover:bg-gray-800/50">
+                      <td className="p-4 text-sm font-medium">{p.title}</td>
+                      <td className={`p-4 font-bold text-sm ${stat?.solved ? 'text-green-500' : 'text-red-500'}`}>{stat?.solved ? "AC" : "Not Solved"}</td>
+                      <td className="p-4 font-mono text-sm text-gray-400">
+                        {stat?.solved ? <span>{stat.timeTaken}m <span className="text-red-500 font-bold">+{stat.fails * 5}</span></span> : "--"}
+                      </td>
+                      <td className="p-4 text-right font-bold text-white">{stat?.solved ? POINTS[p.difficulty] : 0}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <button onClick={resetTool} className="bg-gray-700 hover:bg-gray-600 text-white px-8 py-3 rounded-lg font-bold transition">Start New Contest</button>
         </div>
       )}
+    </>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Hosted Contests list page
+// ---------------------------------------------------------------------------
+const HostedContestList = () => {
+  const [contests, setContests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null);
+  const [showScheduler, setShowScheduler] = useState(false);
+
+  const fetchContests = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/hosted-contest/list`);
+      setContests(res.data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchContests(); }, []);
+
+  const handleCreated = async (newContest) => {
+    setShowScheduler(false);
+    // Fetch full details (including problems array)
+    try {
+      const res = await axios.get(`${API_BASE}/hosted-contest/${newContest.id}`);
+      setSelected(res.data);
+    } catch {
+      setSelected(newContest);
+    }
+  };
+
+  const handleJoinContest = async (c) => {
+    try {
+      const res = await axios.get(`${API_BASE}/hosted-contest/${c.id}`);
+      setSelected(res.data);
+    } catch {
+      setSelected(c);
+    }
+  };
+
+  if (selected) {
+    return (
+      <ContestLobby
+        contest={selected}
+        onLeave={() => { setSelected(null); fetchContests(); }}
+      />
+    );
+  }
+
+  const statusBadge = (s) => ({
+    scheduled: 'bg-yellow-900 text-yellow-400',
+    active: 'bg-green-900 text-green-400',
+    finished: 'bg-gray-700 text-gray-400',
+  }[s] || 'bg-gray-700 text-gray-400');
+
+  return (
+    <div className="max-w-4xl mx-auto">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+          <Users className="text-orange-500" /> Hosted Contests
+        </h2>
+        <button
+          onClick={() => setShowScheduler((v) => !v)}
+          className="bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded font-bold transition flex items-center gap-2"
+        >
+          <Calendar size={16} />
+          {showScheduler ? 'Cancel' : 'Schedule New Contest'}
+        </button>
+      </div>
+
+      {showScheduler && (
+        <div className="mb-8">
+          <ContestScheduler onCreated={handleCreated} />
+        </div>
+      )}
+
+      {loading ? (
+        <div className="text-center py-12">
+          <Loader2 className="animate-spin mx-auto text-orange-500" size={32} />
+          <p className="text-gray-400 mt-3">Loading contests…</p>
+        </div>
+      ) : contests.length === 0 ? (
+        <div className="text-center py-16 bg-gray-800 rounded-xl border border-gray-700">
+          <Calendar size={48} className="mx-auto text-gray-600 mb-4" />
+          <p className="text-gray-400">No hosted contests yet. Schedule the first one!</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {contests.map((c) => (
+            <div
+              key={c.id}
+              className="bg-gray-800 border border-gray-700 rounded-xl p-5 flex justify-between items-center hover:border-gray-600 transition"
+            >
+              <div>
+                <div className="flex items-center gap-3 mb-1">
+                  <span className={`text-xs font-bold uppercase px-2 py-0.5 rounded ${statusBadge(c.status)}`}>
+                    {c.status}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {new Date(c.start_time).toLocaleString()}
+                  </span>
+                </div>
+                <h3 className="font-semibold text-white">{c.title}</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {c.participant_count} participant{c.participant_count !== 1 ? 's' : ''}
+                </p>
+              </div>
+              <button
+                onClick={() => handleJoinContest(c)}
+                className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-bold transition text-sm"
+              >
+                {c.status === 'finished' ? 'View Results' : 'Enter'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Root App with navigation
+// ---------------------------------------------------------------------------
+const App = () => {
+  const [activeMode, setActiveMode] = useState('solo');
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-gray-100 p-8 font-sans">
+      {/* Top Nav */}
+      <nav className="max-w-5xl mx-auto flex items-center justify-between mb-8 border-b border-gray-700 pb-4">
+        <h1 className="text-3xl font-bold text-orange-500">LeetCode Contest Sim</h1>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setActiveMode('solo')}
+            className={`px-4 py-2 rounded font-medium text-sm transition ${
+              activeMode === 'solo'
+                ? 'bg-orange-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            Solo Practice
+          </button>
+          <button
+            onClick={() => setActiveMode('hosted')}
+            className={`px-4 py-2 rounded font-medium text-sm transition flex items-center gap-1 ${
+              activeMode === 'hosted'
+                ? 'bg-orange-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            <Users size={14} /> Hosted Contests
+          </button>
+        </div>
+      </nav>
+
+      {activeMode === 'solo' && <SoloContest />}
+      {activeMode === 'hosted' && <HostedContestList />}
     </div>
   );
 };
