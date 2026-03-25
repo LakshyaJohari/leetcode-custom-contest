@@ -21,6 +21,9 @@ class HostedContest(Base):
     # JSON list of problem dicts: [{title, titleSlug, difficulty, topicTags, ...}]
     problems = Column(JSON, default=list)
 
+    # Secret token given to the contest creator for host-only actions (e.g. end contest)
+    host_token = Column(String, nullable=True)
+
     participants = relationship("Participant", back_populates="contest", cascade="all, delete-orphan")
 
 

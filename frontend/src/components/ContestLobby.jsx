@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { ExternalLink, Loader2, CheckCircle, XCircle, UserPlus, Play } from 'lucide-react';
+import { ExternalLink, Loader2, CheckCircle, XCircle, UserPlus, Play, StopCircle } from 'lucide-react';
 import LiveLeaderboard from './LiveLeaderboard';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://lee-con-tom.onrender.com';
@@ -23,12 +23,15 @@ const ContestLobby = ({ contest: initialContest, onLeave }) => {
       return stored ? Number(stored) : null;
     }
   );
+  const hostToken = localStorage.getItem(`hc_host_token_${initialContest.id}`);
+  const isHost = !!hostToken;
   const [contest, setContest] = useState(initialContest);
   const [timeLeft, setTimeLeft] = useState(0);
   const [submitting, setSubmitting] = useState({});
   const [localProgress, setLocalProgress] = useState({});
   const [joinError, setJoinError] = useState('');
   const [joining, setJoining] = useState(false);
+  const [ending, setEnding] = useState(false);
   const [activeTab, setActiveTab] = useState('problems');
 
   // Refresh contest status from the server every 30 s
@@ -119,6 +122,21 @@ const ContestLobby = ({ contest: initialContest, onLeave }) => {
   const isScheduled = contest.status === 'scheduled';
   const isFinished = contest.status === 'finished';
 
+  const handleEndContest = async () => {
+    if (!window.confirm('Are you sure you want to end this contest for all participants?')) return;
+    setEnding(true);
+    try {
+      await axios.post(`${API_BASE}/hosted-contest/${contest.id}/end`, {
+        host_token: hostToken,
+      });
+      setContest((prev) => ({ ...prev, status: 'finished' }));
+    } catch (err) {
+      console.error('End contest error', err);
+    } finally {
+      setEnding(false);
+    }
+  };
+
   const statusBadge = {
     scheduled: 'bg-yellow-900 text-yellow-400',
     active: 'bg-green-900 text-green-400',
@@ -150,12 +168,24 @@ const ContestLobby = ({ contest: initialContest, onLeave }) => {
             )}
           </div>
         </div>
-        <button
-          onClick={onLeave}
-          className="text-sm text-gray-400 hover:text-white px-3 py-1 border border-gray-600 rounded hover:border-gray-400 transition"
-        >
-          ← Back
-        </button>
+        <div className="flex items-center gap-2">
+          {isHost && (isActive || isScheduled) && (
+            <button
+              onClick={handleEndContest}
+              disabled={ending}
+              className="bg-red-700 hover:bg-red-600 disabled:bg-gray-700 text-white px-3 py-1 rounded font-bold transition text-sm flex items-center gap-1"
+            >
+              {ending ? <Loader2 size={14} className="animate-spin" /> : <StopCircle size={14} />}
+              End Contest
+            </button>
+          )}
+          <button
+            onClick={onLeave}
+            className="text-sm text-gray-400 hover:text-white px-3 py-1 border border-gray-600 rounded hover:border-gray-400 transition"
+          >
+            ← Back
+          </button>
+        </div>
       </div>
 
       {/* Join Panel */}

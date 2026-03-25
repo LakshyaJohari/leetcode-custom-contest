@@ -39,6 +39,9 @@ const ContestScheduler = ({ onCreated }) => {
     setError('');
     if (!title.trim()) return setError('Please enter a contest title.');
     if (!startTime) return setError('Please select a start time.');
+    if ((mode === 'solved' || mode === 'unsolved') && !cookie.trim()) {
+      return setError('A LeetCode session cookie is required for solved/unsolved filtering.');
+    }
 
     setLoading(true);
     try {
