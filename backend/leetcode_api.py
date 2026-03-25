@@ -269,7 +269,6 @@ def get_problems_with_status(session_cookie=None):
         "Origin": "https://leetcode.com",
     }
 
-    solved_slugs = set()
     cookie_valid = False
 
     if session_cookie:
@@ -285,7 +284,7 @@ def get_problems_with_status(session_cookie=None):
 
     if not problems:
         logger.error("Failed to fetch problems from LeetCode API")
-        return []
+        return [], False
 
     # When a valid cookie is provided, always use the AC-filter fallback to get
     # a reliable and complete set of solved problem slugs.  The problemset list
@@ -299,8 +298,12 @@ def get_problems_with_status(session_cookie=None):
                 p["status"] = "ac"
             else:
                 p["status"] = None
+    else:
+        # No valid cookie – status cannot be determined; initialize to None for all problems
+        for p in problems:
+            p["status"] = None
 
-    return problems
+    return problems, cookie_valid
 
 
 def generate_contest(problems, filters):
