@@ -87,11 +87,19 @@ class EndContestRequest(BaseModel):
 
 @app.post("/create-contest")
 def create_contest_endpoint(req: ContestRequest):
-    problems = get_problems_with_status(req.session_cookie)
+    problems, cookie_valid = get_problems_with_status(req.session_cookie)
     if not problems:
         raise HTTPException(status_code=500, detail="Failed to fetch problems")
 
-    contest = generate_contest(problems, {"tags": req.selected_tags, "mode": req.mode})
+    if req.mode == "solved" and not cookie_valid:
+        raise HTTPException(
+            status_code=400,
+            detail="A valid LeetCode session cookie is required to filter by solved problems.",
+        )
+
+    # When no valid cookie, status is unknown – skip status-based filtering
+    effective_mode = req.mode if cookie_valid else "all"
+    contest = generate_contest(problems, {"tags": req.selected_tags, "mode": effective_mode})
     return {"contest": contest, "server_time": int(time.time())}
 
 
@@ -186,19 +194,27 @@ def create_hosted_contest(req: CreateHostedContestRequest, db: Session = Depends
 
     end_dt = start_dt + datetime.timedelta(minutes=90)
 
-    # A session cookie is required when filtering by solved/unsolved status
-    if req.mode in ("solved", "unsolved") and not req.session_cookie:
+    # A session cookie is required when filtering by solved status
+    if req.mode == "solved" and not req.session_cookie:
         raise HTTPException(
             status_code=400,
-            detail="A LeetCode session cookie is required for solved/unsolved filtering.",
+            detail="A LeetCode session cookie is required for solved filtering.",
         )
 
-    problems = get_problems_with_status(req.session_cookie)
+    problems, cookie_valid = get_problems_with_status(req.session_cookie)
     if not problems:
         raise HTTPException(status_code=500, detail="Failed to fetch problems from LeetCode")
 
+    if req.mode == "solved" and not cookie_valid:
+        raise HTTPException(
+            status_code=400,
+            detail="A valid LeetCode session cookie is required to filter by solved problems.",
+        )
+
+    # When no valid cookie, status is unknown – skip status-based filtering
+    effective_mode = req.mode if cookie_valid else "all"
     contest_problems = generate_contest(
-        problems, {"tags": req.selected_tags, "mode": req.mode}
+        problems, {"tags": req.selected_tags, "mode": effective_mode}
     )
     if not contest_problems:
         raise HTTPException(
