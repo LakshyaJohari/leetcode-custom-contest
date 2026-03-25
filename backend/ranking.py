@@ -17,6 +17,7 @@ Total contest score = sum of all solved problem scores.
 
 DIFFICULTY_POINTS = {"Easy": 3, "Medium": 5, "Hard": 7}
 CONTEST_DURATION_MINUTES = 90
+WRONG_ATTEMPT_PENALTY_MINUTES = 5  # Each wrong attempt adds this many virtual minutes
 
 
 def problem_score(
@@ -35,8 +36,8 @@ def problem_score(
     :return: floating-point score >= 0
     """
     base = DIFFICULTY_POINTS.get(difficulty, 3)
-    # Each wrong attempt adds a 5-minute virtual time penalty
-    effective_minutes = minutes_taken + wrong_attempts * 5
+    # Each wrong attempt adds a virtual time penalty
+    effective_minutes = minutes_taken + wrong_attempts * WRONG_ATTEMPT_PENALTY_MINUTES
     time_penalty = (effective_minutes / contest_duration) * 0.5 * base
     return max(0.0, round(base - time_penalty, 4))
 

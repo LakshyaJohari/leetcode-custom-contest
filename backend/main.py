@@ -161,7 +161,7 @@ def _build_leaderboard(contest: HostedContest, db: Session) -> list:
         )
         rows.append(entry)
 
-    rows.sort(key=lambda r: (-r["total_score"], r["solved_count"]))
+    rows.sort(key=lambda r: (-r["total_score"], -r["solved_count"]))
     for rank, row in enumerate(rows, start=1):
         row["rank"] = rank
     return rows

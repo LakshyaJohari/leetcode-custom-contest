@@ -17,6 +17,7 @@ const DIFFICULTY_COLOR = {
 };
 
 const RANK_COLORS = ['text-yellow-400', 'text-gray-300', 'text-orange-500'];
+const MAX_SLUG_DISPLAY_LENGTH = 12;
 
 /**
  * LiveLeaderboard – displays real-time leaderboard for a hosted contest.
@@ -162,8 +163,8 @@ const LiveLeaderboard = ({ contestId, contestStatus }) => {
                           }`}
                           title={`${prob.problem_slug} | ${formatMins(prob.minutes_taken)} | ${prob.wrong_attempts} wrong | ${prob.score} pts`}
                         >
-                          {prob.problem_slug.slice(0, 12)}
-                          {prob.problem_slug.length > 12 ? '…' : ''}{' '}
+                          {prob.problem_slug.slice(0, MAX_SLUG_DISPLAY_LENGTH)}
+                          {prob.problem_slug.length > MAX_SLUG_DISPLAY_LENGTH ? '…' : ''}{' '}
                           <span className="text-gray-500">{formatMins(prob.minutes_taken)}</span>
                           {prob.wrong_attempts > 0 && (
                             <span className="text-red-400 ml-1">
